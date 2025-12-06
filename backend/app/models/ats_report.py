@@ -47,7 +47,7 @@ class ATSReport(ATSReportBase, table=True):
     )
     
     # Relationships (forward reference - will be resolved at runtime)
-    matched_keywords: List["Keyword"] = Relationship(
+    keywords: List["Keyword"] = Relationship(
         back_populates="report",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
@@ -67,5 +67,5 @@ class ATSReportRead(ATSReportBase):
     id: str
     created_at: datetime
     updated_at: Optional[datetime] = None
-    matched_keywords: List[dict] = []  # Will be populated from Keyword model
+    keywords: List[dict] = []  # Will be populated from Keyword model
 

@@ -42,7 +42,7 @@ class Keyword(KeywordBase, table=True):
     report_id: str = Field(foreign_key="ats_reports.id", index=True)
     
     # Relationship (forward reference - will be resolved at runtime)
-    report: Optional["ATSReport"] = Relationship(back_populates="matched_keywords")
+    report: Optional["ATSReport"] = Relationship(back_populates="keywords")
     
     class Config:
         """Pydantic config"""
