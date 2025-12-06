@@ -36,11 +36,12 @@ backend/
 │       └── text_cleaner.py           # 🚧 TODO: Text preprocessing
 │
 ├── requirements.txt                   # ✅ Python dependencies
-├── .env.example                       # ✅ Environment template
+├── .env.example                       # ✅ Environment template (created)
 ├── .gitignore                         # ✅ Git ignore patterns
 ├── Dockerfile                         # ✅ Docker configuration
 ├── README.md                          # ✅ Setup instructions
 ├── SETUP.md                           # ✅ Detailed setup guide
+├── QUICKSTART.md                      # ✅ Quick start guide
 ├── start.sh                           # ✅ Quick start (Linux/Mac)
 ├── start.bat                          # ✅ Quick start (Windows)
 └── test_api.py                        # ✅ API test script
@@ -77,11 +78,12 @@ backend/
 
 ### 5. **Configuration Files**
 - `requirements.txt` - All dependencies
-- `.env.example` - Environment template
+- `.env.example` - Environment template (✅ created)
 - `.gitignore` - Git ignore patterns
 - `Dockerfile` - Container setup
 - `README.md` - Documentation
 - `SETUP.md` - Detailed setup guide
+- `QUICKSTART.md` - Quick start guide
 
 ### 6. **Helper Scripts**
 - `start.sh` - Quick start (Unix)
