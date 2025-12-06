@@ -44,7 +44,7 @@ def upgrade() -> None:
     op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=True)
     op.create_table('keywords',
     sa.Column('keyword', sa.String(), nullable=False),
-    sa.Column('keyword_type', sa.Enum('MATCHED', 'MISSING', name='keywordtype'), nullable=False),
+    sa.Column('keyword_type', sa.Enum('matched', 'missing', name='keywordtype'), nullable=False),
     sa.Column('importance', sa.Float(), nullable=True),
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('report_id', sa.String(), nullable=False),
