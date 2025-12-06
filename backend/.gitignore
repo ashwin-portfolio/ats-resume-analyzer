@@ -47,6 +47,10 @@ htmlcov/
 *.db
 *.sqlite3
 
+# Alembic cache (migrations are still committed)
+alembic/__pycache__/
+alembic/versions/__pycache__/
+
 # ML Models Cache
 model_cache/
 *.pt

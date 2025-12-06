@@ -27,7 +27,7 @@ class ATSAnalysisRequest(BaseModel):
     job_description: str = Field(..., description="Job description text", min_length=10)
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "resume_text": "Experienced software engineer with 5 years...",
                 "job_description": "We are looking for a Full Stack Developer with Python and React experience..."
@@ -46,7 +46,7 @@ class ATSAnalysisResponse(BaseModel):
     report_id: str = Field(..., description="Unique report identifier")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "ats_score": 75.5,
                 "skill_match_percentage": 68.3,
@@ -75,7 +75,7 @@ class ReportDetail(BaseModel):
     resume_filename: Optional[str] = None
     
     class Config:
-        orm_mode = True  # Allows conversion from SQLAlchemy models
+        from_attributes = True  # Allows conversion from SQLAlchemy models (Pydantic v2)
 
 
 class ReportListResponse(BaseModel):

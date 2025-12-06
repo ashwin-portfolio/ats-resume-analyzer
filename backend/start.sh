@@ -26,6 +26,5 @@ fi
 
 # Run the server
 echo "✅ Starting server..."
-cd app
-python main.py
+python -m app.main
 
