@@ -60,3 +60,5 @@ class UserRead(UserBase):
     created_at: datetime
     updated_at: Optional[datetime] = None
 
+
+
