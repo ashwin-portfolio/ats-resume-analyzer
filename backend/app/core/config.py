@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     MIN_KEYWORD_LENGTH: int = 2
     MAX_KEYWORDS: int = 50
     
+    # Rate Limiting Settings
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_ANALYZE: str = "10/minute"  # 10 requests per minute for /analyze
+    RATE_LIMIT_DEFAULT: str = "100/minute"  # 100 requests per minute for other endpoints
+    
     @field_validator('ALLOWED_EXTENSIONS', 'CORS_ORIGINS', mode='before')
     @classmethod
     def parse_list_from_env(cls, v):

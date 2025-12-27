@@ -2,27 +2,29 @@
 API Routes for ATS Resume Analyzer.
 Handles all endpoints for resume analysis, health checks, and reports.
 """
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
+import re
+import os
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, Request
 from fastapi.responses import JSONResponse
 from typing import Optional
 import logging
 
 from app.core.schemas import (
-    ATSAnalysisRequest,
     ATSAnalysisResponse,
     HealthCheckResponse,
     ReportListResponse,
     ReportDetail
 )
+from app.core.config import settings
+from app.core.rate_limit import rate_limit
 from app.ml import is_model_loaded
-from app.models.database import get_db
+from app.models.database import get_db, check_db_connection
 from app.models.ats_report import ATSReport, ATSReportCreate
 from app.models.keyword import Keyword, KeywordCreate, KeywordType
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Create API router
@@ -30,21 +32,106 @@ router = APIRouter()
 
 
 # ===============================
+# HELPER FUNCTIONS
+# ===============================
+def get_limiter(request: Request):
+    """Get rate limiter from app state"""
+    return request.app.state.limiter
+
+
+def sanitize_filename(filename: str) -> str:
+    """
+    Sanitize filename to prevent path traversal attacks.
+    
+    Args:
+        filename: Original filename
+        
+    Returns:
+        Sanitized filename (basename only, no path components)
+    """
+    if not filename:
+        return "resume"
+    
+    # Remove any path components (prevent directory traversal)
+    filename = os.path.basename(filename)
+    
+    # Remove or replace dangerous characters
+    # Keep alphanumeric, dots, hyphens, underscores, spaces
+    filename = re.sub(r'[^a-zA-Z0-9._\s-]', '', filename)
+    
+    # Limit length
+    if len(filename) > 255:
+        name, ext = os.path.splitext(filename)
+        filename = name[:250] + ext
+    
+    return filename or "resume"
+
+
+def validate_report_id(report_id: str) -> bool:
+    """
+    Validate report ID format to prevent injection attacks.
+    
+    Args:
+        report_id: Report ID to validate
+        
+    Returns:
+        True if valid, False otherwise
+    """
+    if not report_id:
+        return False
+    
+    # Report IDs should match pattern: rpt_<hex_chars> or usr_<hex_chars>
+    # Allow alphanumeric, underscores, hyphens (for UUIDs)
+    pattern = r'^[a-zA-Z0-9_-]{8,64}$'
+    return bool(re.match(pattern, report_id))
+
+
+def validate_job_description_length(job_description: str) -> None:
+    """
+    Validate job description length.
+    
+    Args:
+        job_description: Job description text
+        
+    Raises:
+        HTTPException: If validation fails
+    """
+    max_length = 50000  # 50KB max
+    if len(job_description) > max_length:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Job description too long. Maximum length: {max_length} characters"
+        )
+
+
+# ===============================
 # HEALTH CHECK ENDPOINT
 # ===============================
 @router.get("/health", response_model=HealthCheckResponse, tags=["Health"])
-async def health_check():
+async def health_check(request: Request):
     """
     Health check endpoint to verify API status.
+    Includes database and ML model status checks.
+    Not rate limited (needed for monitoring).
     
     Returns:
         HealthCheckResponse: API status and version information
     """
+    # Check database connection
+    db_healthy = check_db_connection()
+    
+    # Check ML model
+    ml_loaded = is_model_loaded()
+    
+    # Determine overall status
+    status = "healthy" if (db_healthy and ml_loaded) else "degraded"
+    
     return {
-        "status": "healthy",
+        "status": status,
         "version": "1.0.0",
         "service": "ATS Resume Analyzer",
-        "ml_model_loaded": is_model_loaded()  # Check actual model status
+        "ml_model_loaded": ml_loaded,
+        "database_connected": db_healthy
     }
 
 
@@ -52,15 +139,19 @@ async def health_check():
 # ATS ANALYSIS ENDPOINT
 # ===============================
 @router.post("/analyze", response_model=ATSAnalysisResponse, tags=["Analysis"])
+@rate_limit(settings.RATE_LIMIT_ANALYZE)
 async def analyze_resume(
+    request: Request,
     resume_file: UploadFile = File(..., description="Resume file (PDF or DOCX)"),
     job_description: str = Form(..., description="Job description text"),
     db: Session = Depends(get_db)
 ):
     """
     Analyze resume against job description and generate ATS report.
+    Rate limited to prevent abuse (configured via settings.RATE_LIMIT_ANALYZE).
     
     Args:
+        request: FastAPI request object
         resume_file: Uploaded resume file (PDF or DOCX format)
         job_description: Target job description text
         db: Database session (injected via dependency)
@@ -76,15 +167,25 @@ async def analyze_resume(
     
     Raises:
         HTTPException: If file format is invalid or processing fails
+        RateLimitExceeded: If rate limit is exceeded (when enabled)
     """
     try:
-        logger.info(f"📄 Received resume: {resume_file.filename}")
+        # Validate filename exists
+        if not resume_file.filename:
+            raise HTTPException(
+                status_code=400,
+                detail="File must have a filename"
+            )
+        
+        # Sanitize filename to prevent path traversal
+        sanitized_filename = sanitize_filename(resume_file.filename)
+        logger.info(f"📄 Received resume: {sanitized_filename}")
         
         # Validate file type
         allowed_extensions = [".pdf", ".docx", ".doc"]
         
         # Extract file extension safely
-        filename_lower = resume_file.filename.lower()
+        filename_lower = sanitized_filename.lower()
         if "." not in filename_lower:
             raise HTTPException(
                 status_code=400,
@@ -102,71 +203,128 @@ async def analyze_resume(
         file_content = await resume_file.read()
         logger.info(f"📊 File size: {len(file_content)} bytes")
         
-        # TODO: Extract text from resume
-        # from app.utils.file_parser import extract_text_from_file
-        # resume_text = extract_text_from_file(file_content, file_extension)
-        
-        # TODO: Perform ATS analysis
-        # from app.ml.analyzer import analyze_resume_text
-        # analysis_result = analyze_resume_text(resume_text, job_description)
-        
-        # TODO: Extract text from resume and perform real analysis
-        # For now, use mock data but save to database
-        
-        # Create mock analysis result
-        ats_score = 75.5
-        skill_match = 68.3
-        matched_keywords_list = [
-            "Python", "FastAPI", "React", "PostgreSQL", 
-            "Machine Learning", "REST API"
-        ]
-        missing_keywords_list = [
-            "Docker", "Kubernetes", "AWS", "CI/CD", "TensorFlow"
-        ]
-        summary_text = "Your resume shows strong alignment with the job requirements, particularly in backend development and API design. Consider adding more keywords related to DevOps and cloud technologies."
-        recommendations_list = [
-            "Add Docker and containerization experience to your resume",
-            "Include specific cloud platform experience (AWS/Azure/GCP)",
-            "Highlight CI/CD pipeline implementation",
-            "Mention any experience with scalable system design",
-            "Add metrics and quantifiable achievements"
-        ]
-        
-        # Create ATS Report in database
-        report_data = ATSReportCreate(
-            ats_score=ats_score,
-            skill_match_percentage=skill_match,
-            summary=summary_text,
-            resume_filename=resume_file.filename,
-            job_description=job_description
-        )
-        
-        # Create report instance
-        db_report = ATSReport(**report_data.dict())
-        db.add(db_report)
-        db.flush()  # Get the ID without committing
-        
-        # Add matched keywords
-        for keyword_text in matched_keywords_list:
-            keyword = Keyword(
-                keyword=keyword_text,
-                keyword_type=KeywordType.MATCHED,
-                report_id=db_report.id
+        # Validate file size
+        if len(file_content) > settings.MAX_UPLOAD_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Maximum size: {settings.MAX_UPLOAD_SIZE / (1024*1024):.1f}MB"
             )
-            db.add(keyword)
         
-        # Add missing keywords
-        for keyword_text in missing_keywords_list:
-            keyword = Keyword(
-                keyword=keyword_text,
-                keyword_type=KeywordType.MISSING,
-                report_id=db_report.id
+        # Validate file is not empty
+        if len(file_content) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="File is empty"
             )
-            db.add(keyword)
         
-        # Commit all changes
-        db.commit()
-        db.refresh(db_report)
+        # Extract text from resume (with content validation)
+        from app.utils.file_parser import extract_text_from_file
+        try:
+            resume_text = extract_text_from_file(file_content, file_extension, validate_content=True)
+            logger.info(f"✅ Extracted {len(resume_text)} characters from resume")
+        except Exception as e:
+            logger.error(f"❌ Error extracting text: {e}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to extract text from file: {str(e)}"
+            )
+        
+        # Validate extracted text is not empty
+        if not resume_text or len(resume_text.strip()) < 50:
+            raise HTTPException(
+                status_code=400,
+                detail="Resume file appears to be empty or contains no extractable text (minimum 50 characters required)"
+            )
+        
+        # Validate job description
+        job_description = job_description.strip()
+        if not job_description or len(job_description) < 10:
+            raise HTTPException(
+                status_code=400,
+                detail="Job description must be at least 10 characters long"
+            )
+        
+        # Perform ATS analysis
+        from app.ml.analyzer import analyze_resume_text
+        from app.ml import get_model
+        
+        model = get_model()
+        if model is None:
+            logger.warning("⚠️  ML model not loaded, analysis may be limited")
+            raise HTTPException(
+                status_code=503,
+                detail="ML model not available. Please ensure the model is loaded."
+            )
+        
+        try:
+            analysis_result = analyze_resume_text(resume_text, job_description, model)
+            logger.info(f"✅ Analysis complete: ATS Score = {analysis_result['ats_score']}")
+        except Exception as e:
+            logger.error(f"❌ Error during analysis: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Analysis failed: {str(e)}"
+            )
+        
+        # Extract results
+        ats_score = analysis_result["ats_score"]
+        skill_match = analysis_result["skill_match_percentage"]
+        matched_keywords_list = analysis_result["matched_keywords"]
+        missing_keywords_list = analysis_result["missing_keywords"]
+        summary_text = analysis_result["summary"]
+        recommendations_list = analysis_result["recommendations"]
+        
+        # Create ATS Report in database with transaction rollback on error
+        try:
+            report_data = ATSReportCreate(
+                ats_score=ats_score,
+                skill_match_percentage=skill_match,
+                summary=summary_text,
+                resume_filename=sanitized_filename,  # Use sanitized filename
+                job_description=job_description[:50000]  # Truncate if too long (safety)
+            )
+            
+            # Create report instance
+            db_report = ATSReport(**report_data.model_dump())
+            db.add(db_report)
+            db.flush()  # Get the ID without committing
+            
+            # Add matched keywords (ensure list is not None and filter empty)
+            if matched_keywords_list:
+                for keyword_text in matched_keywords_list:
+                    if keyword_text and keyword_text.strip():  # Skip empty keywords
+                        # Limit length to prevent DB errors (most DBs have VARCHAR limits)
+                        keyword_text_limited = keyword_text[:255] if len(keyword_text) > 255 else keyword_text
+                        keyword = Keyword(
+                            keyword=keyword_text_limited,
+                            keyword_type=KeywordType.MATCHED,
+                            report_id=db_report.id
+                        )
+                        db.add(keyword)
+            
+            # Add missing keywords (ensure list is not None and filter empty)
+            if missing_keywords_list:
+                for keyword_text in missing_keywords_list:
+                    if keyword_text and keyword_text.strip():  # Skip empty keywords
+                        # Limit length to prevent DB errors
+                        keyword_text_limited = keyword_text[:255] if len(keyword_text) > 255 else keyword_text
+                        keyword = Keyword(
+                            keyword=keyword_text_limited,
+                            keyword_type=KeywordType.MISSING,
+                            report_id=db_report.id
+                        )
+                        db.add(keyword)
+            
+            # Commit all changes
+            db.commit()
+            db.refresh(db_report)
+        except Exception as db_error:
+            db.rollback()
+            logger.error(f"❌ Database error: {db_error}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to save report to database: {str(db_error)}"
+            )
         
         logger.info(f"✅ Analysis completed and saved to database. Report ID: {db_report.id}")
         
@@ -195,7 +353,9 @@ async def analyze_resume(
 # GET REPORT BY ID
 # ===============================
 @router.get("/report/{report_id}", response_model=ATSAnalysisResponse, tags=["Reports"])
+@rate_limit(settings.RATE_LIMIT_DEFAULT)
 async def get_report(
+    request: Request,
     report_id: str,
     db: Session = Depends(get_db)
 ):
@@ -203,6 +363,7 @@ async def get_report(
     Retrieve a previously generated ATS report by ID.
     
     Args:
+        request: FastAPI request object
         report_id: Unique identifier for the report
         db: Database session
     
@@ -210,10 +371,18 @@ async def get_report(
         ATSAnalysisResponse: Complete report data
     
     Raises:
-        HTTPException: If report not found
+        HTTPException: If report not found or invalid ID format
     """
     try:
-        # Query database for report
+        # Rate limiting is enforced via @rate_limit decorator
+        # Validate report ID format (prevent injection attacks)
+        if not validate_report_id(report_id):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid report ID format"
+            )
+        
+        # Query database for report (using parameterized query - safe from SQL injection)
         report = db.query(ATSReport).filter(ATSReport.id == report_id).first()
         if not report:
             raise HTTPException(status_code=404, detail="Report not found")
@@ -223,12 +392,13 @@ async def get_report(
         matched_keywords = [kw.keyword for kw in keywords if kw.keyword_type == KeywordType.MATCHED]
         missing_keywords = [kw.keyword for kw in keywords if kw.keyword_type == KeywordType.MISSING]
         
-        # Generate recommendations (for now, simple mock)
-        recommendations = [
-            "Add Docker and containerization experience to your resume",
-            "Include specific cloud platform experience (AWS/Azure/GCP)",
-            "Highlight CI/CD pipeline implementation"
-        ]
+        # Generate recommendations based on missing keywords
+        from app.ml.analyzer import generate_recommendations
+        recommendations = generate_recommendations(
+            missing_keywords,
+            report.ats_score,
+            report.skill_match_percentage
+        )
         
         return {
             "ats_score": report.ats_score,
@@ -254,7 +424,9 @@ async def get_report(
 # LIST ALL REPORTS (OPTIONAL)
 # ===============================
 @router.get("/reports", response_model=ReportListResponse, tags=["Reports"])
+@rate_limit(settings.RATE_LIMIT_DEFAULT)
 async def list_reports(
+    request: Request,
     skip: int = 0,
     limit: int = 10,
     db: Session = Depends(get_db)
@@ -263,6 +435,7 @@ async def list_reports(
     List all ATS reports with pagination.
     
     Args:
+        request: FastAPI request object
         skip: Number of records to skip
         limit: Maximum number of records to return
         db: Database session
@@ -271,6 +444,14 @@ async def list_reports(
         ReportListResponse: Paginated list of reports
     """
     try:
+        # Rate limiting is enforced via slowapi middleware
+        # Validate pagination parameters
+        if skip < 0:
+            skip = 0
+        if limit < 1:
+            limit = 10
+        elif limit > 100:
+            limit = 100  # Maximum limit to prevent excessive queries
         # Get total count
         total = db.query(ATSReport).count()
         
@@ -285,6 +466,14 @@ async def list_reports(
             matched_keywords = [kw.keyword for kw in keywords if kw.keyword_type == KeywordType.MATCHED]
             missing_keywords = [kw.keyword for kw in keywords if kw.keyword_type == KeywordType.MISSING]
             
+            # Generate recommendations for each report
+            from app.ml.analyzer import generate_recommendations
+            recommendations = generate_recommendations(
+                missing_keywords,
+                report.ats_score,
+                report.skill_match_percentage
+            )
+            
             report_list.append(ReportDetail(
                 report_id=report.id,
                 ats_score=report.ats_score,
@@ -292,7 +481,7 @@ async def list_reports(
                 matched_keywords=matched_keywords,
                 missing_keywords=missing_keywords,
                 summary=report.summary,
-                recommendations=[],  # TODO: Store recommendations in DB
+                recommendations=recommendations,
                 created_at=report.created_at,
                 resume_filename=report.resume_filename
             ))

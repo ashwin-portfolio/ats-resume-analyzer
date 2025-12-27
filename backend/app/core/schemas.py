@@ -12,29 +12,16 @@ from datetime import datetime
 # ===============================
 class HealthCheckResponse(BaseModel):
     """Response schema for health check endpoint"""
-    status: str = Field(..., description="Service status (healthy/unhealthy)")
+    status: str = Field(..., description="Service status (healthy/degraded/unhealthy)")
     version: str = Field(..., description="API version")
     service: str = Field(..., description="Service name")
     ml_model_loaded: bool = Field(..., description="ML model loading status")
+    database_connected: Optional[bool] = Field(None, description="Database connection status")
 
 
 # ===============================
 # ATS ANALYSIS SCHEMAS
 # ===============================
-class ATSAnalysisRequest(BaseModel):
-    """Request schema for ATS analysis (not used with file upload, kept for reference)"""
-    resume_text: Optional[str] = Field(None, description="Resume text content")
-    job_description: str = Field(..., description="Job description text", min_length=10)
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "resume_text": "Experienced software engineer with 5 years...",
-                "job_description": "We are looking for a Full Stack Developer with Python and React experience..."
-            }
-        }
-
-
 class ATSAnalysisResponse(BaseModel):
     """Response schema for ATS analysis results"""
     ats_score: float = Field(..., description="Overall ATS score (0-100)", ge=0, le=100)

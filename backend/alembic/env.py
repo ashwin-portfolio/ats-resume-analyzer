@@ -14,7 +14,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.models.database import engine
 from app.models.ats_report import ATSReport
 from app.models.keyword import Keyword
-from app.models.user import User
 from app.core.config import settings
 from sqlmodel import SQLModel
 

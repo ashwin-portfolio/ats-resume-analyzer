@@ -4,7 +4,7 @@ Stores resume analysis results and recommendations.
 """
 from sqlmodel import SQLModel, Field, Relationship
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 
@@ -38,7 +38,7 @@ class ATSReport(ATSReportBase, table=True):
     
     # Timestamps
     created_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="Report creation timestamp"
     )
     updated_at: Optional[datetime] = Field(

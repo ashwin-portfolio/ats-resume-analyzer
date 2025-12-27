@@ -22,12 +22,6 @@ from app.models.keyword import (
     KeywordRead,
     KeywordType
 )
-from app.models.user import (
-    User,
-    UserBase,
-    UserCreate,
-    UserRead
-)
 
 __all__ = [
     # Database
@@ -47,10 +41,5 @@ __all__ = [
     "KeywordCreate",
     "KeywordRead",
     "KeywordType",
-    # User
-    "User",
-    "UserBase",
-    "UserCreate",
-    "UserRead",
 ]
 
