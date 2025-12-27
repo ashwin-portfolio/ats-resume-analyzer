@@ -104,8 +104,26 @@ async def lifespan(app: FastAPI):
     
     yield  # Application runs here
     
-    # Shutdown
+    # Shutdown - graceful cleanup
     logger.info("👋 Shutting down ATS Resume Analyzer API...")
+    
+    # Close database connections gracefully
+    try:
+        from app.models.database import engine
+        engine.dispose()
+        logger.info("✅ Database connections closed")
+    except Exception as e:
+        logger.error(f"⚠️  Error closing database connections: {e}")
+    
+    # Clear ML model from memory (optional, helps with cleanup)
+    try:
+        set_model(None)
+        set_model_loaded(False)
+        logger.info("✅ ML model unloaded")
+    except Exception as e:
+        logger.error(f"⚠️  Error unloading ML model: {e}")
+    
+    logger.info("✅ Shutdown complete")
 
 
 # Initialize FastAPI app with lifespan
