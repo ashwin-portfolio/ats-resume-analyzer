@@ -5,7 +5,6 @@ Handles all endpoints for resume analysis, health checks, and reports.
 import re
 import os
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, Request
-from fastapi.responses import JSONResponse
 from typing import Optional
 import logging
 
@@ -20,9 +19,9 @@ from app.core.rate_limit import rate_limit
 from app.ml import is_model_loaded
 from app.models.database import get_db, check_db_connection
 from app.models.ats_report import ATSReport, ATSReportCreate
-from app.models.keyword import Keyword, KeywordCreate, KeywordType
+from app.models.keyword import Keyword, KeywordType
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, and_
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -34,11 +33,6 @@ router = APIRouter()
 # ===============================
 # HELPER FUNCTIONS
 # ===============================
-def get_limiter(request: Request):
-    """Get rate limiter from app state"""
-    return request.app.state.limiter
-
-
 def sanitize_filename(filename: str) -> str:
     """
     Sanitize filename to prevent path traversal attacks.
@@ -84,24 +78,6 @@ def validate_report_id(report_id: str) -> bool:
     # Allow alphanumeric, underscores, hyphens (for UUIDs)
     pattern = r'^[a-zA-Z0-9_-]{8,64}$'
     return bool(re.match(pattern, report_id))
-
-
-def validate_job_description_length(job_description: str) -> None:
-    """
-    Validate job description length.
-    
-    Args:
-        job_description: Job description text
-        
-    Raises:
-        HTTPException: If validation fails
-    """
-    max_length = 50000  # 50KB max
-    if len(job_description) > max_length:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Job description too long. Maximum length: {max_length} characters"
-        )
 
 
 # ===============================
@@ -182,6 +158,7 @@ async def analyze_resume(
         logger.info(f"📄 Received resume: {sanitized_filename}")
         
         # Validate file type
+        # Note: .doc (old format) is listed but will be rejected with helpful error message
         allowed_extensions = [".pdf", ".docx", ".doc"]
         
         # Extract file extension safely
@@ -244,6 +221,14 @@ async def analyze_resume(
                 detail="Job description must be at least 10 characters long"
             )
         
+        # Warn if job description is very long (will be truncated in DB)
+        max_jd_length = 50000
+        if len(job_description) > max_jd_length:
+            logger.warning(
+                f"Job description exceeds {max_jd_length} characters "
+                f"({len(job_description)} chars). Will be truncated in database."
+            )
+        
         # Perform ATS analysis
         from app.ml.analyzer import analyze_resume_text
         from app.ml import get_model
@@ -266,13 +251,13 @@ async def analyze_resume(
                 detail=f"Analysis failed: {str(e)}"
             )
         
-        # Extract results
-        ats_score = analysis_result["ats_score"]
-        skill_match = analysis_result["skill_match_percentage"]
-        matched_keywords_list = analysis_result["matched_keywords"]
-        missing_keywords_list = analysis_result["missing_keywords"]
-        summary_text = analysis_result["summary"]
-        recommendations_list = analysis_result["recommendations"]
+        # Extract results with None safety
+        ats_score = analysis_result.get("ats_score", 0.0)
+        skill_match = analysis_result.get("skill_match_percentage", 0.0)
+        matched_keywords_list = analysis_result.get("matched_keywords") or []
+        missing_keywords_list = analysis_result.get("missing_keywords") or []
+        summary_text = analysis_result.get("summary", "Analysis completed.")
+        recommendations_list = analysis_result.get("recommendations") or []
         
         # Create ATS Report in database with transaction rollback on error
         try:
@@ -289,6 +274,14 @@ async def analyze_resume(
             db.add(db_report)
             db.flush()  # Get the ID without committing
             
+            # Assert that ID is set after flush (type narrowing for type checker)
+            if db_report.id is None:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to generate report ID"
+                )
+            report_id = db_report.id
+            
             # Add matched keywords (ensure list is not None and filter empty)
             if matched_keywords_list:
                 for keyword_text in matched_keywords_list:
@@ -298,7 +291,7 @@ async def analyze_resume(
                         keyword = Keyword(
                             keyword=keyword_text_limited,
                             keyword_type=KeywordType.MATCHED,
-                            report_id=db_report.id
+                            report_id=report_id
                         )
                         db.add(keyword)
             
@@ -311,7 +304,7 @@ async def analyze_resume(
                         keyword = Keyword(
                             keyword=keyword_text_limited,
                             keyword_type=KeywordType.MISSING,
-                            report_id=db_report.id
+                            report_id=report_id
                         )
                         db.add(keyword)
             
@@ -383,14 +376,27 @@ async def get_report(
             )
         
         # Query database for report (using parameterized query - safe from SQL injection)
-        report = db.query(ATSReport).filter(ATSReport.id == report_id).first()
+        report = db.query(ATSReport).filter(ATSReport.id == report_id).first()  # type: ignore
         if not report:
             raise HTTPException(status_code=404, detail="Report not found")
         
-        # Get keywords for this report
-        keywords = db.query(Keyword).filter(Keyword.report_id == report_id).all()
-        matched_keywords = [kw.keyword for kw in keywords if kw.keyword_type == KeywordType.MATCHED]
-        missing_keywords = [kw.keyword for kw in keywords if kw.keyword_type == KeywordType.MISSING]
+        # Get keywords for this report (filter by type in query for better performance)
+        # Note: SQLAlchemy column comparisons return BinaryExpression, not bool, but type checker sees bool
+        matched_keywords_query = db.query(Keyword).filter(  # type: ignore
+            and_(  # type: ignore
+                Keyword.report_id == report_id,  # type: ignore
+                Keyword.keyword_type == KeywordType.MATCHED  # type: ignore
+            )
+        ).all()
+        matched_keywords = [kw.keyword for kw in matched_keywords_query]
+        
+        missing_keywords_query = db.query(Keyword).filter(  # type: ignore
+            and_(  # type: ignore
+                Keyword.report_id == report_id,  # type: ignore
+                Keyword.keyword_type == KeywordType.MISSING  # type: ignore
+            )
+        ).all()
+        missing_keywords = [kw.keyword for kw in missing_keywords_query]
         
         # Generate recommendations based on missing keywords
         from app.ml.analyzer import generate_recommendations
@@ -456,15 +462,34 @@ async def list_reports(
         total = db.query(ATSReport).count()
         
         # Get paginated reports (newest first)
-        reports = db.query(ATSReport).order_by(desc(ATSReport.created_at)).offset(skip).limit(limit).all()
+        # Note: SQLModel columns work with desc(), type checker may show warning but runtime is correct
+        reports = db.query(ATSReport).order_by(desc(ATSReport.created_at)).offset(skip).limit(limit).all()  # type: ignore
         
         # Convert to response format
         report_list = []
         for report in reports:
-            # Get keywords for each report
-            keywords = db.query(Keyword).filter(Keyword.report_id == report.id).all()
-            matched_keywords = [kw.keyword for kw in keywords if kw.keyword_type == KeywordType.MATCHED]
-            missing_keywords = [kw.keyword for kw in keywords if kw.keyword_type == KeywordType.MISSING]
+            # Ensure report.id is not None (type narrowing)
+            if report.id is None:
+                continue  # Skip reports without ID (shouldn't happen)
+            current_report_id = report.id
+            
+            # Get keywords for each report (filter by type in query)
+            # Note: SQLAlchemy column comparisons return BinaryExpression, not bool, but type checker sees bool
+            matched_keywords_query = db.query(Keyword).filter(  # type: ignore
+                and_(  # type: ignore
+                    Keyword.report_id == current_report_id,  # type: ignore
+                    Keyword.keyword_type == KeywordType.MATCHED  # type: ignore
+                )
+            ).all()
+            matched_keywords = [kw.keyword for kw in matched_keywords_query]
+            
+            missing_keywords_query = db.query(Keyword).filter(  # type: ignore
+                and_(  # type: ignore
+                    Keyword.report_id == current_report_id,  # type: ignore
+                    Keyword.keyword_type == KeywordType.MISSING  # type: ignore
+                )
+            ).all()
+            missing_keywords = [kw.keyword for kw in missing_keywords_query]
             
             # Generate recommendations for each report
             from app.ml.analyzer import generate_recommendations
@@ -475,7 +500,7 @@ async def list_reports(
             )
             
             report_list.append(ReportDetail(
-                report_id=report.id,
+                report_id=current_report_id,
                 ats_score=report.ats_score,
                 skill_match_percentage=report.skill_match_percentage,
                 matched_keywords=matched_keywords,

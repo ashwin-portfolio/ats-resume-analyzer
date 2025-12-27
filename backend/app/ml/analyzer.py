@@ -81,8 +81,17 @@ def analyze_resume_text(
         
         # Compute semantic similarity using embeddings
         logger.info("🧠 Computing semantic similarity...")
-        resume_embedding = compute_embeddings([resume_clean], model)[0]
-        jd_embedding = compute_embeddings([jd_clean], model)[0]
+        resume_embeddings = compute_embeddings([resume_clean], model)
+        jd_embeddings = compute_embeddings([jd_clean], model)
+        
+        # Validate embeddings were computed successfully
+        if not resume_embeddings or len(resume_embeddings) == 0:
+            raise ValueError("Failed to compute resume embeddings")
+        if not jd_embeddings or len(jd_embeddings) == 0:
+            raise ValueError("Failed to compute job description embeddings")
+        
+        resume_embedding = resume_embeddings[0]
+        jd_embedding = jd_embeddings[0]
         
         semantic_similarity = compute_similarity(resume_embedding, jd_embedding)
         semantic_score = semantic_similarity * 100  # Convert to percentage

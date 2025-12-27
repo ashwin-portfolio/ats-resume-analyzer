@@ -176,9 +176,18 @@ def extract_text_from_file(file_content: bytes, file_extension: str, validate_co
     
     if file_extension == '.pdf':
         return extract_text_from_pdf(file_content)
-    elif file_extension in ['.docx', '.doc']:
+    elif file_extension == '.docx':
         return extract_text_from_docx(file_content)
+    elif file_extension == '.doc':
+        # Old .doc format (OLE2) - python-docx doesn't support it
+        # Note: Old .doc files require additional libraries like python-docx2txt or antiword
+        # For now, we'll raise an error with a helpful message
+        raise ValueError(
+            "Old .doc format (OLE2) is not supported. "
+            "Please convert your file to .docx or .pdf format. "
+            "You can use Microsoft Word or online converters to convert .doc to .docx"
+        )
     else:
-        raise ValueError(f"Unsupported file type: {file_extension}. Supported: .pdf, .docx, .doc")
+        raise ValueError(f"Unsupported file type: {file_extension}. Supported: .pdf, .docx")
 
 
