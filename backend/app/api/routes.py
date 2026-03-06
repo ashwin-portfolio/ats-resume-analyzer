@@ -2,11 +2,9 @@
 API Routes for ATS Resume Analyzer.
 Handles all endpoints for resume analysis, health checks, and reports.
 """
-import re
-import os
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, Request
-from typing import Optional
 import logging
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 
 from app.core.schemas import (
     ATSAnalysisResponse,
@@ -17,6 +15,7 @@ from app.core.schemas import (
 from app.core.config import settings
 from app.core.rate_limit import rate_limit
 from app.ml import is_model_loaded
+from app.utils.validation import is_valid_report_id, normalize_upload_filename
 from app.models.database import get_db, check_db_connection
 from app.models.ats_report import ATSReport, ATSReportCreate
 from app.models.keyword import Keyword, KeywordType
@@ -28,56 +27,6 @@ logger = logging.getLogger(__name__)
 
 # Create API router
 router = APIRouter()
-
-
-# ===============================
-# HELPER FUNCTIONS
-# ===============================
-def sanitize_filename(filename: str) -> str:
-    """
-    Sanitize filename to prevent path traversal attacks.
-    
-    Args:
-        filename: Original filename
-        
-    Returns:
-        Sanitized filename (basename only, no path components)
-    """
-    if not filename:
-        return "resume"
-    
-    # Remove any path components (prevent directory traversal)
-    filename = os.path.basename(filename)
-    
-    # Remove or replace dangerous characters
-    # Keep alphanumeric, dots, hyphens, underscores, spaces
-    filename = re.sub(r'[^a-zA-Z0-9._\s-]', '', filename)
-    
-    # Limit length
-    if len(filename) > 255:
-        name, ext = os.path.splitext(filename)
-        filename = name[:250] + ext
-    
-    return filename or "resume"
-
-
-def validate_report_id(report_id: str) -> bool:
-    """
-    Validate report ID format to prevent injection attacks.
-    
-    Args:
-        report_id: Report ID to validate
-        
-    Returns:
-        True if valid, False otherwise
-    """
-    if not report_id:
-        return False
-    
-    # Report IDs should match pattern: rpt_<hex_chars> or usr_<hex_chars>
-    # Allow alphanumeric, underscores, hyphens (for UUIDs)
-    pattern = r'^[a-zA-Z0-9_-]{8,64}$'
-    return bool(re.match(pattern, report_id))
 
 
 # ===============================
@@ -147,34 +96,18 @@ async def analyze_resume(
     """
     try:
         # Validate filename exists
-        if not resume_file.filename:
-            raise HTTPException(
-                status_code=400,
-                detail="File must have a filename"
+        try:
+            upload = normalize_upload_filename(
+                resume_file.filename or "",
+                allowed_extensions=settings.ALLOWED_EXTENSIONS,
+                allow_legacy_doc=True,
             )
-        
-        # Sanitize filename to prevent path traversal
-        sanitized_filename = sanitize_filename(resume_file.filename)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+        sanitized_filename = upload.sanitized_filename
+        file_extension = upload.file_extension
         logger.info(f"📄 Received resume: {sanitized_filename}")
-        
-        # Validate file type
-        # Note: .doc (old format) is listed but will be rejected with helpful error message
-        allowed_extensions = [".pdf", ".docx", ".doc"]
-        
-        # Extract file extension safely
-        filename_lower = sanitized_filename.lower()
-        if "." not in filename_lower:
-            raise HTTPException(
-                status_code=400,
-                detail="File must have an extension. Allowed: " + ", ".join(allowed_extensions)
-            )
-        
-        file_extension = "." + filename_lower.split(".")[-1]
-        if file_extension not in allowed_extensions:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid file format. Allowed: {', '.join(allowed_extensions)}"
-            )
         
         # Read file content
         file_content = await resume_file.read()
@@ -369,7 +302,7 @@ async def get_report(
     try:
         # Rate limiting is enforced via @rate_limit decorator
         # Validate report ID format (prevent injection attacks)
-        if not validate_report_id(report_id):
+        if not is_valid_report_id(report_id):
             raise HTTPException(
                 status_code=400,
                 detail="Invalid report ID format"

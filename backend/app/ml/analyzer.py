@@ -3,8 +3,7 @@ Main ATS analysis logic.
 Combines text extraction, keyword analysis, and semantic similarity.
 """
 import logging
-from typing import Dict, List, Tuple
-import numpy as np
+from typing import Any
 
 from app.ml.embeddings import (
     load_embedding_model,
@@ -21,12 +20,14 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+class AnalysisError(RuntimeError):
+    """Raised when the ATS analysis pipeline fails."""
 
 def analyze_resume_text(
     resume_text: str,
     job_description: str,
-    model=None
-) -> Dict:
+    model: Any = None
+) -> dict[str, Any]:
     """
     Perform comprehensive ATS analysis on resume text against job description.
     
@@ -69,10 +70,6 @@ def analyze_resume_text(
             max_keywords=settings.MAX_KEYWORDS
         )
         
-        # Ensure we have lists (not None)
-        matched_keywords = matched_keywords if matched_keywords is not None else []
-        missing_keywords = missing_keywords if missing_keywords is not None else []
-        
         # Calculate keyword match score
         keyword_match_score = calculate_keyword_match_score(
             matched_keywords,
@@ -81,17 +78,8 @@ def analyze_resume_text(
         
         # Compute semantic similarity using embeddings
         logger.info("🧠 Computing semantic similarity...")
-        resume_embeddings = compute_embeddings([resume_clean], model)
-        jd_embeddings = compute_embeddings([jd_clean], model)
-        
-        # Validate embeddings were computed successfully
-        if not resume_embeddings or len(resume_embeddings) == 0:
-            raise ValueError("Failed to compute resume embeddings")
-        if not jd_embeddings or len(jd_embeddings) == 0:
-            raise ValueError("Failed to compute job description embeddings")
-        
-        resume_embedding = resume_embeddings[0]
-        jd_embedding = jd_embeddings[0]
+        resume_embedding = compute_embeddings([resume_clean], model)[0]
+        jd_embedding = compute_embeddings([jd_clean], model)[0]
         
         semantic_similarity = compute_similarity(resume_embedding, jd_embedding)
         semantic_score = semantic_similarity * 100  # Convert to percentage
@@ -132,8 +120,8 @@ def analyze_resume_text(
         }
         
     except Exception as e:
-        logger.error(f"❌ Error during analysis: {e}")
-        raise RuntimeError(f"Analysis failed: {str(e)}")
+        logger.exception("❌ Error during analysis")
+        raise AnalysisError(f"Analysis failed: {str(e)}") from e
 
 
 def generate_summary(
@@ -182,10 +170,10 @@ def generate_summary(
 
 
 def generate_recommendations(
-    missing_keywords: List[str],
+    missing_keywords: list[str],
     ats_score: float,
     keyword_score: float
-) -> List[str]:
+) -> list[str]:
     """
     Generate actionable recommendations based on analysis.
     

@@ -1,24 +1,16 @@
 {
-  "include": [
-    "backend"
-  ],
-  "exclude": [
-    "**/node_modules",
-    "**/__pycache__",
-    "**/venv"
-  ],
-  "venvPath": "backend",
-  "venv": "venv",
   "pythonVersion": "3.12",
   "typeCheckingMode": "basic",
-  "reportMissingImports": "warning",
-  "pythonPlatform": "Darwin",
+  "reportMissingImports": "none",
+  "reportMissingTypeStubs": "none",
   "executionEnvironments": [
     {
       "root": "backend",
-      "pythonVersion": "3.12",
-      "pythonPlatform": "Darwin"
+      "extraPaths": ["backend"],
+      "venvPath": "backend",
+      "venv": "venv"
     }
-  ]
+  ],
+  "exclude": ["**/node_modules", "**/__pycache__", "backend/venv"]
 }
 

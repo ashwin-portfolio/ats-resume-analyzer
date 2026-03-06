@@ -30,4 +30,3 @@ requests>=2.31.0
 # Security & Production
 slowapi==0.1.9  # Rate limiting
 python-magic==0.4.27  # File type detection (requires libmagic on system)
-

@@ -419,6 +419,4 @@ This project is licensed under the MIT License - see the [LICENSE](../LICENSE) f
 
 **Part of the [ATS Resume Analyzer](../README.md) project**
 
-*Built with ❤️ using Next.js and modern React best practices*
-
-</div>
+*Built with ❤️ using Next.js and modern React best practices*</div>

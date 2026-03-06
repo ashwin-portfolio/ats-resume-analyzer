@@ -307,15 +307,23 @@ ats-resume-analyzer/
 
 ## 🧪 Testing
 
-```bash
-# Backend tests
-cd backend
-pytest tests/ --cov=app --cov-report=html
+All backend tests live in **`backend/tests/`**. Run them from the backend directory (with venv activated; backend server must be running for API tests).
 
-# Frontend tests
-cd frontend
-npm test
+```bash
+cd backend
+source venv/bin/activate   # or venv\Scripts\activate on Windows
+
+# API/integration tests (start backend server in another terminal first)
+python tests/test_all_phases.py
+python tests/test_edge_cases.py
+
+# Database CRUD tests (uses .env DB; no server needed)
+python tests/test_database.py
 ```
+
+See **[backend/tests/README.md](backend/tests/README.md)** for prerequisites and full instructions.
+
+**Frontend:** `cd frontend && npm test` (when tests are added).
 
 **Test Coverage Target:** 80%+ (infrastructure ready)
 

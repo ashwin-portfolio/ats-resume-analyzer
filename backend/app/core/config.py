@@ -26,7 +26,8 @@ class Settings(BaseSettings):
     
     # File Upload Settings
     MAX_UPLOAD_SIZE: int = 10 * 1024 * 1024  # 10MB
-    ALLOWED_EXTENSIONS: List[str] = [".pdf", ".docx", ".doc"]
+    # Note: legacy `.doc` files are not supported; use `.docx`.
+    ALLOWED_EXTENSIONS: List[str] = [".pdf", ".docx"]
     
     # CORS Settings
     CORS_ORIGINS: List[str] = [

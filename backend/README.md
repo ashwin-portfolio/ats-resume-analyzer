@@ -301,24 +301,24 @@ backend/
 
 ## 🧪 Testing
 
+Tests are in **`tests/`** inside the backend. Run from the backend directory with venv activated.
+
 ```bash
-# Run all tests
-pytest tests/ -v
+cd backend
+source venv/bin/activate   # or venv\Scripts\activate on Windows
 
-# Run with coverage
-pytest tests/ --cov=app --cov-report=html
+# Start backend server in another terminal, then:
+python tests/test_all_phases.py    # Phases 1–4: skeleton, DB, ML, frontend integration
+python tests/test_edge_cases.py    # Edge cases: file upload, job description, network
 
-# Run specific test file
-pytest tests/test_api.py -v
+# Database CRUD tests (uses .env DB; no server needed)
+python tests/test_database.py
 
-# Test health endpoint
+# Health check
 curl http://localhost:8000/api/v1/health
 ```
 
-**Test Files:**
-- `test_api.py` - API endpoint tests
-- `test_database.py` - Database CRUD tests
-- `test_edge_cases.py` - Edge case validation tests
+See **[tests/README.md](tests/README.md)** for full instructions.
 
 ---
 
@@ -486,6 +486,4 @@ This project is licensed under the MIT License - see the [LICENSE](../LICENSE) f
 
 **Part of the [ATS Resume Analyzer](../README.md) project**
 
-*Built with ❤️ using FastAPI and modern Python best practices*
-
-</div>
+*Built with ❤️ using FastAPI and modern Python best practices*</div>

@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Upload, File, X, CheckCircle2, FileText } from 'lucide-react';
+import { MAX_UPLOAD_BYTES, ALLOWED_EXTENSIONS } from '../lib/constants';
 
 export default function FileUpload({ onFileSelect, selectedFile, error }) {
   const [dragActive, setDragActive] = useState(false);
@@ -10,14 +11,11 @@ export default function FileUpload({ onFileSelect, selectedFile, error }) {
     (acceptedFiles) => {
       if (acceptedFiles.length > 0) {
         const file = acceptedFiles[0];
-        // Validate file type
-        const validTypes = ['.pdf', '.docx', '.doc'];
-        const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
-        
-        if (validTypes.includes(fileExtension)) {
+        const ext = '.' + (file.name.split('.').pop() || '').toLowerCase();
+        if (ALLOWED_EXTENSIONS.includes(ext)) {
           onFileSelect(file);
         } else {
-          onFileSelect(null, 'Invalid file type. Please upload PDF or DOCX files only.');
+          onFileSelect(null, 'Invalid file type. Please upload PDF or DOCX only. (Legacy .doc is not supported.)');
         }
       }
     },
@@ -29,10 +27,9 @@ export default function FileUpload({ onFileSelect, selectedFile, error }) {
     accept: {
       'application/pdf': ['.pdf'],
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
-      'application/msword': ['.doc'],
     },
     maxFiles: 1,
-    maxSize: 10 * 1024 * 1024, // 10MB
+    maxSize: MAX_UPLOAD_BYTES,
   });
 
   const removeFile = () => {
@@ -119,7 +116,7 @@ export default function FileUpload({ onFileSelect, selectedFile, error }) {
                 </p>
                 <p className="text-xs text-slate-400 mt-3 flex items-center justify-center space-x-1">
                   <FileText className="w-3 h-3" />
-                  <span>Supports PDF, DOCX (Max 10MB)</span>
+                  <span>PDF or DOCX, max {MAX_UPLOAD_BYTES / (1024 * 1024)}MB</span>
                 </p>
               </div>
             </div>

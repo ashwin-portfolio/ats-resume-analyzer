@@ -3,14 +3,9 @@
   "venv": "venv",
   "pythonVersion": "3.12",
   "typeCheckingMode": "basic",
-  "reportMissingImports": "warning",
-  "executionEnvironments": [
-    {
-      "root": ".",
-      "pythonVersion": "3.12",
-      "pythonPlatform": "Darwin",
-      "extraPaths": []
-    }
-  ]
+  "reportMissingImports": "none",
+  "reportMissingTypeStubs": "none",
+  "include": ["app", "test_*.py"],
+  "exclude": ["venv", "**/__pycache__"]
 }
 

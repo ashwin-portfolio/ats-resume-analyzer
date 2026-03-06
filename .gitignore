@@ -209,21 +209,3 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
-
-# Next.js build output (should not be committed)
-**/.next/
-.next/
-out/
-build/
-
-# Frontend dependencies
-node_modules/
-.pnp/
-.pnp.js
-
-# TypeScript
-*.tsbuildinfo
-next-env.d.ts
-
-# Vercel
-.vercel/
